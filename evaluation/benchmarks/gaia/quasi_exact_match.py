@@ -22,6 +22,9 @@ def normalize_string(s: str) -> str:
     # Convert to lowercase
     s = s.lower()
     
+    # Remove articles (a, an, the) at the beginning
+    s = re.sub(r'\b(a|an|the)\b\s*', '', s)
+    
     # Remove extra whitespace
     s = re.sub(r'\s+', ' ', s)
     
@@ -46,6 +49,12 @@ def normalize_number(value: Union[str, int, float]) -> str:
     """
     if isinstance(value, (int, float)):
         return str(value)
+    
+    # Remove currency symbols ($, €, £, etc.)
+    value = re.sub(r'[$€£¥₹₽]', '', value)
+    
+    # Remove percentage sign
+    value = re.sub(r'%', '', value)
     
     # Remove commas from numbers (e.g., "1,234" -> "1234")
     value = re.sub(r',', '', value)
@@ -79,6 +88,29 @@ def extract_number(s: str) -> Union[float, None]:
         except ValueError:
             return None
     return None
+
+
+def normalize_list(value: str) -> str:
+    """
+    Normalize a list string for comparison
+    
+    Args:
+        value: Input list string (e.g., "Paris, London, Berlin")
+        
+    Returns:
+        Normalized list string (e.g., "berlin,london,paris")
+    """
+    # Split by comma
+    items = [item.strip() for item in value.split(',')]
+    
+    # Normalize each item
+    normalized_items = [normalize_string(item) for item in items]
+    
+    # Sort alphabetically
+    normalized_items.sort()
+    
+    # Join with comma
+    return ','.join(normalized_items)
 
 
 def quasi_exact_match(
@@ -122,6 +154,14 @@ def quasi_exact_match(
         if pred_num is not None and gt_num is not None:
             return abs(pred_num - gt_num) <= tolerance
         
+        # Check if both strings look like lists (contain commas)
+        pred_has_comma = ',' in prediction
+        gt_has_comma = ',' in ground_truth
+        
+        if pred_has_comma and gt_has_comma:
+            # Both look like lists, use list normalization
+            return normalize_list(prediction) == normalize_list(ground_truth)
+        
         # Otherwise do string comparison
         return normalize_string(prediction) == normalize_string(ground_truth)
     
@@ -140,9 +180,19 @@ def quasi_exact_match(
     
     # Handle list/set types
     if isinstance(prediction, (list, set)) and isinstance(ground_truth, (list, set)):
-        pred_set = set(prediction) if isinstance(prediction, list) else prediction
-        gt_set = set(ground_truth) if isinstance(ground_truth, list) else ground_truth
-        return pred_set == gt_set
+        # Convert to lists for consistent processing
+        pred_list = list(prediction) if isinstance(prediction, set) else prediction
+        gt_list = list(ground_truth) if isinstance(ground_truth, set) else ground_truth
+        
+        # Normalize each element
+        pred_normalized = [normalize_string(str(item)) for item in pred_list]
+        gt_normalized = [normalize_string(str(item)) for item in gt_list]
+        
+        # Sort and compare
+        pred_normalized.sort()
+        gt_normalized.sort()
+        
+        return pred_normalized == gt_normalized
     
     # Handle dict types
     if isinstance(prediction, dict) and isinstance(ground_truth, dict):
